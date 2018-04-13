@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns="http://www.springframework.org/schema/beans"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+		http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc.xsd
+		http://www.springframework.org/schema/util  http://www.springframework.org/schema/util/spring-util.xsd"
+        default-lazy-init="true">
+
+    <description>Spring MVC Configuration</description>
+
+    <!-- 加载配置属性文件 -->
+    <context:property-placeholder ignore-unresolvable="true" location="classpath:cfg.properties"/>
+
+    <!-- 使用Annotation自动注册Bean,只扫描@Controller  base-package 如果多个，用“,”分隔-->
+    <context:component-scan base-package="com.isimpo.web,com.isimpo.common,com.isimpo.job,com.isimpo.base.web" use-default-filters="false">
+        <context:include-filter type="annotation"
+                                expression="org.springframework.stereotype.Controller"/>
+    </context:component-scan>
+
+    <!--Json转换器，加入null转换为空字符串等功能-->
+    <bean id="objectMapper" class="com.isimpo.common.mapper.JsonMapper">
+        <property name="filterProvider" ref="filterProvider"></property>
+        <property name="mixIns">
+            <map>
+                <entry key="com.isimpo.base.vo.DbBaseVo"
+                       value="com.isimpo.common.mapper.BaseFilterMixIn"></entry>
+            </map>
+        </property>
+    </bean>
+    <bean id="filterProvider" class="com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider">
+        <constructor-arg index="0">
+            <map>
+                <entry key="baseFilter" value-ref="beanPropertyFilter"></entry>
+            </map>
+        </constructor-arg>
+    </bean>
+    <bean id="beanPropertyFilter" class="com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter.SerializeExceptFilter">
+        <constructor-arg index="0">
+            <list>
+                <value>delFlag</value>
+                <value>addMark</value>
+                <value>addTime</value>
+                <value>addUserId</value>
+                <value>updTime</value>
+                <value>updUserId</value>
+                <value>updMark</value>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <!-- 将StringHttpMessageConverter的默认编码设为UTF-8 -->
+    <bean id="stringHttpMessageConverter"
+          class="org.springframework.http.converter.StringHttpMessageConverter">
+        <!-- 默认编码 -->
+        <constructor-arg value="UTF-8"/>
+        <!-- 不写AcceptCharset-->
+        <property name="writeAcceptCharset" value="false"/>
+    </bean>
+
+    <!-- 将Jackson2HttpMessageConverter的默认格式化输出为false -->
+    <bean id="mappingJackson2HttpMessageConverter"
+          class="org.springframework.http.converter.json.MappingJackson2HttpMessageConverter">
+        <property name="supportedMediaTypes">
+            <list>
+                <value>application/json;charset=UTF-8</value>
+            </list>
+        </property>
+        <property name="objectMapper" ref="objectMapper"/>
+        <property name="prettyPrint" value="false"/>
+    </bean>
+
+    <!-- 默认的注解映射的支持，org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping -->
+    <mvc:annotation-driven content-negotiation-manager="contentNegotiationManager">
+        <mvc:message-converters register-defaults="true">
+            <ref bean="stringHttpMessageConverter"/>
+            <ref bean="mappingJackson2HttpMessageConverter"/>
+        </mvc:message-converters>
+    </mvc:annotation-driven>
+
+    <mvc:resources mapping="/static/**" location="/static/" order="0" cache-period="31536000"/>
+
+    <!-- REST中根据URL后缀自动判定Content-Type及相应的View -->
+    <bean id="contentNegotiationManager"
+          class="org.springframework.web.accept.ContentNegotiationManagerFactoryBean">
+        <property name="mediaTypes">
+            <map>
+                <entry key="json" value="application/json"/>
+            </map>
+        </property>
+        <property name="ignoreAcceptHeader" value="true"/>
+        <property name="favorParameter" value="false"/>
+        <property name="favorPathExtension" value="true"/>
+    </bean>
+
+    <!-- 定义视图文件解析 -->
+    <bean class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <property name="prefix" value="/WEB-INF/views/"/>
+        <property name="suffix" value=".jsp"/>
+    </bean>
+
+    <bean class="com.isimpo.base.web.exception.SimpoExceptionResolver">
+        <property name="order" value="0"/>
+        <property name="defaultErrorView" value="common/error/500"/>
+        <property name="exceptionMappings">
+            <props>
+                <prop key="com.isimpo.base.web.exception.UnauthorizedException">common/error/403</prop>
+                <prop key="org.springframework.web.multipart.MaxUploadSizeExceededException">
+                    common/error/size
+                </prop>
+            </props>
+        </property>
+        <property name="exceptionMappings4ResponseBody">
+            <map>
+                <entry key="com.isimpo.base.web.exception.UnauthorizedException">
+                    <util:constant static-field="com.isimpo.base.constants.ResponseCode.UNAUTHORIZED"/>
+                </entry>
+                <entry key="org.springframework.web.multipart.MaxUploadSizeExceededException">
+                    <util:constant
+                            static-field="com.isimpo.base.constants.ResponseCode.MAX_UPLOAD_SIZE_EXCEEDED"/>
+                </entry>
+            </map>
+        </property>
+        <property name="contentNegotiationManager" ref="contentNegotiationManager"/>
+        <property name="messageConverters">
+            <list>
+                <ref bean="stringHttpMessageConverter"/>
+                <ref bean="mappingJackson2HttpMessageConverter"/>
+            </list>
+        </property>
+    </bean>
+
+    <!-- 上传文件拦截，设置最大上传文件大小   10M=10*1024*1024(B)=10485760 bytes -->
+    <bean id="multipartResolver"
+          class="org.springframework.web.multipart.commons.CommonsMultipartResolver">
+        <!--先默认1M-->
+        <property name="resolveLazily" value="true"/>
+        <property name="maxUploadSize" value="10485760"/>
+        <property name="defaultEncoding" value="UTF-8"/>
+    </bean>
+
+    <!--拦截器定义-->
+    <import resource="spring-mvc-interceptor.xml"/>
+</beans>
